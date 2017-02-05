@@ -1,0 +1,117 @@
+require_relative 'builtin.rb'
+require_relative 'env.rb'
+require_relative 'script.rb'
+require_relative 'util.rb'
+
+def read_line(prompt)
+    print prompt
+    s = $stdin.gets
+    s.chomp unless s == nil
+end
+
+def repl
+    input_lines = ''
+    prompt = lambda do
+        input_lines.length == 0 ?
+            blue($env[:PWD]) + " " + green($env[:PS1]) :
+            green($env[:PS2])
+    end
+
+    while line = read_line(prompt.call)
+        input_lines += line
+        if input_lines[-1] != '\\'
+            run_list parse(input_lines)
+            input_lines = ''
+        end
+        input_lines.chop!
+    end
+end
+
+def search_path(prog)
+    # ./path/to/program
+    return prog if File.exist? prog
+
+    # search PATH
+    $env[:PATH].each do |path|
+        full_path = File.join path, prog
+        return full_path if File.exist? full_path
+    end
+
+    false
+end
+
+def spawn_child(cmd, stdin, stdout)
+    if !$builtins.include?(cmd.prog.to_sym) && !(prog = search_path cmd.prog)
+        error("#{$shell}: Unknown command '#{cmd.prog}'")
+        return false
+    end
+
+    Process.fork do 
+        if !stdin.equal? $stdin
+            $stdin.reopen stdin
+            stdin.close
+        end
+
+        if !stdout.equal? $stdout
+            $stdout.reopen stdout
+            stdout.close
+        end
+
+        cmd.redirs[$stdin].each do |file, mode|
+            File.open(file, mode) {|f| $stdin.reopen f}
+        end
+
+        cmd.redirs[$stdout].each do |file, mode|
+            File.open(file, mode) do |f|
+                $stdout.reopen f
+                $stderr.reopen f if cmd.redirs[$stderr].include? [file, mode]
+            end
+        end
+
+        if $builtins.include? cmd.prog.to_s
+            self.send builtin_name(cmd.prog), cmd.argv
+        else
+            Process.exec prog, *cmd.argv
+        end
+    end
+end
+
+def run_list(lst)
+    if lst.length == 0
+        $env[:STATUS] = 0
+        return
+    end
+
+    # Do not fork if only a builtin is provided
+    if lst.length == 1 && $builtins.include?(lst[0].prog.to_sym)
+       $env[:STATUS] = self.send(builtin_name(lst[0].prog), lst[0].argv) ? 0 : 1
+       return
+    end
+
+    children = []
+    pipe = []
+    stdin = $stdin
+    stdout = $stdout
+
+    success = lst.each_with_index do |cmd, i|
+        if i < lst.length - 1
+            pipe = IO.pipe
+            stdout = pipe[1]
+        else
+            stdout = $stdout
+        end
+
+        pid = spawn_child cmd, stdin, stdout
+        break false unless pid
+
+        stdin.close unless stdin.equal? $stdin
+        stdout.close unless stdout.equal? $stdout
+        stdin = pipe[0]
+
+        children.push pid
+    end
+
+    children.each {|pid| Process.kill 'SIGTERM', pid} unless success
+    Process.waitall
+    $env[:STATUS] = success ? 0 : 1
+end
