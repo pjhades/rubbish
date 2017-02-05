@@ -68,7 +68,7 @@ def spawn_child(cmd, stdin, stdout)
             end
         end
 
-        if $builtins.include? cmd.prog.to_s
+        if $builtins.include? cmd.prog.to_sym
             self.send builtin_name(cmd.prog), cmd.argv
         else
             Process.exec prog, *cmd.argv
