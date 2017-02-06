@@ -69,7 +69,7 @@ def spawn_child(cmd, stdin, stdout)
         end
 
         if $builtins.include? cmd.prog.to_sym
-            self.send builtin_name(cmd.prog), cmd.argv
+            exit self.send builtin_name(cmd.prog), cmd.argv
         else
             Process.exec prog, *cmd.argv
         end
@@ -111,7 +111,12 @@ def run_list(lst)
         children.push pid
     end
 
-    children.each {|pid| Process.kill 'SIGTERM', pid} unless success
-    Process.waitall
-    $env[:STATUS] = success ? 0 : 1
+    if !success
+        children.each {|pid| Process.kill 'SIGTERM', pid}
+        $env[:STATUS] = 1
+        return
+    end
+
+    pid, status = Process.waitall.find {|pid, status| pid == children.last}
+    $env[:STATUS] = status.exitstatus == 0 ? 0 : 1
 end
