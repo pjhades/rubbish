@@ -20,6 +20,9 @@ $ ruby rubbish.rb
     - piped commands all run in a new process
 * redirections
     - `<`, `>`, `>>`, `&>`, `&>>`
+* quotes
+* escape sequence
+    - `\r`, `\n`, `\t`
 * colorized shell prompt
 
 # Todo
