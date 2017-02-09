@@ -29,6 +29,118 @@ def parse_redir(cmd_str)
     return cmd_str - matches.map{|m| m[0]}, redirs
 end
 
+# Poor-man's command line parsing
+# Return [true, -1] if the parsing succeeds, or [false, pos] otherwise,
+# where pos indicates the position in the command string that causes
+# the failure
+def parse_pipe_and_quote(cmd_str, &block)
+    # Splitted command and a certain piece of it
+    cmd, arg = [], ''
+    # Whether we're inside quotes
+    in_single_quote = false
+    in_double_quote = false
+    # Whether we're scanning escape sequence
+    escaped = false
+    # If the last non-space character is an active pipe
+    active_pipe = false
+
+    (0 ... cmd_str.length).each do |i|
+        case cmd_str[i]
+        when ' '
+            # Preserve spaces inside quotes
+            if in_single_quote || in_double_quote
+                arg += ' '
+                next
+            end
+
+            # Or we've splitted a new piece
+            if arg.length > 0
+                cmd.push arg
+                arg = ''
+            end
+            active_pipe = false
+
+        when '|'
+            # Preserve pipes inside quotes
+            if in_single_quote || in_double_quote
+                arg += cmd_str[i]
+                active_pipe = false
+            else
+                # Or we have a new piece before the pipe
+                cmd.push arg if arg.length > 0
+
+                # Yay!
+                yield cmd
+                cmd = []
+                arg = ''
+
+                active_pipe = true
+            end
+
+
+        when "'"
+            # Treat the single quote as it is if it's escaped
+            # or we're inside double quotes
+            if escaped || in_double_quote
+                arg += cmd_str[i]
+                escaped = false if escaped
+            else
+                in_single_quote = !in_single_quote
+            end
+            active_pipe = false
+
+        when '"'
+            # Treat the double quote as it is if it's escaped
+            # or we're inside single quotes
+            if escaped || in_single_quote
+                arg += cmd_str[i]
+                escaped = false if escaped
+            else
+                in_double_quote = !in_double_quote
+            end
+            active_pipe = false
+
+        when '\\'
+            # Treat escape sequence as it is if we're inside single quotes
+            if escaped || in_single_quote
+                arg += '\\'
+                escaped = false if escaped
+            else
+                # Complain if there's nothing afterwards
+                return [false, i] if i + 1 >= cmd_str.length
+                # We are now ready for the escape sequence
+                escaped = true
+            end
+            active_pipe = false
+
+        else
+            # Turn \n, \t, \r to themselves
+            if escaped
+                arg += cmd_str[i] == 'n' ? "\n" :
+                       cmd_str[i] == 't' ? "\t" :
+                       cmd_str[i] == 'r' ? "\r" : cmd_str[i]
+                escaped = false
+            else
+                arg += cmd_str[i]
+            end
+            active_pipe = false
+        end
+    end
+
+    # Complain if we've exhausted the command string
+    # but ended up inside quotes
+    return [false, cmd_str.length] if in_single_quote ||
+                                      in_double_quote ||
+                                      active_pipe
+    # Collect the last splitted command
+    if arg.length > 0
+        cmd.push arg
+        yield cmd
+    end
+
+    return [true, -1]
+end
+
 def parse(input)
     # TODO Now we assume that
     # - input has no ||, &&, &, and ;
@@ -41,10 +153,12 @@ def parse(input)
     #         'a/r'  is either an argument or redirection
     #
     #   each 'a/r' has no whitespace characters inside
-    
-    input.split('|').map do |piece|
-        cmd_str = piece.split
-        cmd_str, redirs = parse_redir cmd_str
-        Struct::Command.new(cmd_str[0], cmd_str[1..-1], redirs)
+
+    cmds = []
+    valid, pos = parse_pipe_and_quote(input) do |cmd|
+        cmd, redir = parse_redir cmd
+        cmds.push Struct::Command.new(cmd[0], cmd[1..-1], redir)
     end
+
+    return valid ? [valid, cmds] : [valid, pos]
 end

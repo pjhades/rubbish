@@ -6,24 +6,35 @@ require_relative 'util.rb'
 def read_line(prompt)
     print prompt
     s = $stdin.gets
-    s.chomp unless s == nil
+    s.strip unless s == nil
 end
 
 def repl
     input_lines = ''
+    slash = false
+
     prompt = lambda do
-        input_lines.length == 0 ?
-            blue($env[:PWD]) + " " + green($env[:PS1]) :
-            green($env[:PS2])
+        slash ? green($env[:PS2]) :
+                blue($env[:PWD]) + " " + green($env[:PS1])
     end
 
     while line = read_line(prompt.call)
         input_lines += line
         if input_lines[-1] != '\\'
-            run_list parse(input_lines)
+            input_lines.strip!
+            valid, result = parse(input_lines)
+            if !valid
+                error("#{$shell}: invalid syntax:\n#{input_lines}\n" \
+                      "#{' ' * result + '^'}")
+            else
+                run_list(result)
+            end
             input_lines = ''
+            slash = false
+        else
+            input_lines.chop!
+            slash = true
         end
-        input_lines.chop!
     end
 end
 
