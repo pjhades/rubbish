@@ -11,25 +11,25 @@ def parse_redir(cmd_str)
         $stderr => []
     }
 
-    matches = cmd_str.map {|piece| /^(<|>|>>|&>|&>>)([^<>&]+)$/.match piece}
-                     .select {|m| m}
+    matches = cmd_str.map { |piece| /^(<|>|>>|&>|&>>)([^<>&]+)$/.match(piece) }
+                     .select { |m| m }
     matches.each do |m|
         type, file = m[1..-1]
         if type == '<'
-            redirs[$stdin].push [file, 'r']
+            redirs[$stdin].push([file, 'r'])
         elsif type == '>' || type == '&>'
-            redirs[$stdout].push [file, 'w']
-            redirs[$stderr].push [file, 'w'] if type == '&>'
+            redirs[$stdout].push([file, 'w'])
+            redirs[$stderr].push([file, 'w']) if type == '&>'
         else
-            redirs[$stdout].push [file, 'a']
-            redirs[$stderr].push [file, 'a'] if type == '&>>'
+            redirs[$stdout].push([file, 'a'])
+            redirs[$stderr].push([file, 'a']) if type == '&>>'
         end
     end
 
-    return cmd_str - matches.map{|m| m[0]}, redirs
+    return cmd_str - matches.map { |m| m[0] }, redirs
 end
 
-# Poor-man's command line parsing
+# Poorman's command line parsing
 # Return [true, -1] if the parsing succeeds, or [false, pos] otherwise,
 # where pos indicates the position in the command string that causes
 # the failure
@@ -55,7 +55,7 @@ def parse_pipe_and_quote(cmd_str, &block)
 
             # Or we've splitted a new piece
             if arg.length > 0
-                cmd.push arg
+                cmd.push(arg)
                 arg = ''
             end
             active_pipe = false
@@ -67,7 +67,7 @@ def parse_pipe_and_quote(cmd_str, &block)
                 active_pipe = false
             else
                 # Or we have a new piece before the pipe
-                cmd.push arg if arg.length > 0
+                cmd.push(arg) if arg.length > 0
 
                 # Yay!
                 yield cmd
@@ -134,7 +134,7 @@ def parse_pipe_and_quote(cmd_str, &block)
                                       active_pipe
     # Collect the last splitted command
     if arg.length > 0
-        cmd.push arg
+        cmd.push(arg)
         yield cmd
     end
 
@@ -156,8 +156,8 @@ def parse(input)
 
     cmds = []
     valid, pos = parse_pipe_and_quote(input) do |cmd|
-        cmd, redir = parse_redir cmd
-        cmds.push Struct::Command.new(cmd[0], cmd[1..-1], redir)
+        cmd, redir = parse_redir(cmd)
+        cmds.push(Struct::Command.new(cmd[0], cmd[1..-1], redir))
     end
 
     return valid ? [valid, cmds] : [valid, pos]

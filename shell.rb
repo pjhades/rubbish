@@ -24,8 +24,9 @@ def repl
             input_lines.strip!
             valid, result = parse(input_lines)
             if !valid
-                error("#{$shell}: invalid syntax:\n#{input_lines}\n" \
-                      "#{' ' * result + '^'}")
+                error("#{$shell}: invalid syntax:\n" +
+                      "#{input_lines}\n" +
+                      ' ' * result + '^')
             else
                 run_list(result)
             end
@@ -40,12 +41,12 @@ end
 
 def search_path(prog)
     # ./path/to/program
-    return prog if File.exist? prog
+    return prog if File.exist?(prog)
 
     # search PATH
     $env[:PATH].each do |path|
-        full_path = File.join path, prog
-        return full_path if File.exist? full_path
+        full_path = File.join(path, prog)
+        return full_path if File.exist?(full_path)
     end
 
     false
@@ -58,31 +59,31 @@ def spawn_child(cmd, stdin, stdout)
     end
 
     Process.fork do 
-        if !stdin.equal? $stdin
-            $stdin.reopen stdin
+        if !stdin.equal?($stdin)
+            $stdin.reopen(stdin)
             stdin.close
         end
 
-        if !stdout.equal? $stdout
-            $stdout.reopen stdout
+        if !stdout.equal?($stdout)
+            $stdout.reopen(stdout)
             stdout.close
         end
 
         cmd.redirs[$stdin].each do |file, mode|
-            File.open(file, mode) {|f| $stdin.reopen f}
+            File.open(file, mode) { |f| $stdin.reopen(f) }
         end
 
         cmd.redirs[$stdout].each do |file, mode|
             File.open(file, mode) do |f|
-                $stdout.reopen f
-                $stderr.reopen f if cmd.redirs[$stderr].include? [file, mode]
+                $stdout.reopen(f)
+                $stderr.reopen(f) if cmd.redirs[$stderr].include?([file, mode])
             end
         end
 
-        if $builtins.include? cmd.prog.to_sym
-            exit self.send builtin_name(cmd.prog), cmd.argv
+        if $builtins.include?(cmd.prog.to_sym)
+            exit self.send(builtin_name(cmd.prog), cmd.argv)
         else
-            Process.exec prog, *cmd.argv
+            Process.exec(prog, *cmd.argv)
         end
     end
 end
@@ -112,22 +113,22 @@ def run_list(lst)
             stdout = $stdout
         end
 
-        pid = spawn_child cmd, stdin, stdout
+        pid = spawn_child(cmd, stdin, stdout)
         break false unless pid
 
-        stdin.close unless stdin.equal? $stdin
-        stdout.close unless stdout.equal? $stdout
+        stdin.close unless stdin.equal?($stdin)
+        stdout.close unless stdout.equal?($stdout)
         stdin = pipe[0]
 
-        children.push pid
+        children.push(pid)
     end
 
     if !success
-        children.each {|pid| Process.kill 'SIGTERM', pid}
+        children.each { |pid| Process.kill('SIGTERM', pid) }
         $env[:STATUS] = 1
         return
     end
 
-    pid, status = Process.waitall.find {|pid, status| pid == children.last}
+    pid, status = Process.waitall.find { |pid, status| pid == children.last }
     $env[:STATUS] = status.exitstatus == 0 ? 0 : 1
 end

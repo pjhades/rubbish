@@ -6,4 +6,4 @@ $env = {
     :STATUS => 0,
 }
 
-Dir.chdir $env[:PWD]
+Dir.chdir($env[:PWD])
