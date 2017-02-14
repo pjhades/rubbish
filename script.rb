@@ -34,6 +34,7 @@ end
 # where pos indicates the position in the command string that causes
 # the failure
 def parse_pipe_and_quote(cmd_str, &block)
+    cmds = []
     # Splitted command and a certain piece of it
     cmd, arg = [], ''
     # Whether we're inside quotes
@@ -58,6 +59,7 @@ def parse_pipe_and_quote(cmd_str, &block)
                 cmd.push(arg)
                 arg = ''
             end
+
             active_pipe = false
 
         when '|'
@@ -70,7 +72,11 @@ def parse_pipe_and_quote(cmd_str, &block)
                 cmd.push(arg) if arg.length > 0
 
                 # Yay!
-                yield cmd
+                if block_given?
+                    yield cmd
+                else
+                    cmds.push(cmd)
+                end
                 cmd = []
                 arg = ''
 
@@ -135,10 +141,14 @@ def parse_pipe_and_quote(cmd_str, &block)
     # Collect the last splitted command
     if arg.length > 0
         cmd.push(arg)
-        yield cmd
+        if block_given?
+            yield cmd
+        else
+            cmds.push(cmd)
+        end
     end
 
-    return [true, -1]
+    return cmds
 end
 
 def parse(input)
@@ -154,11 +164,11 @@ def parse(input)
     #
     #   each 'a/r' has no whitespace characters inside
 
-    cmds = []
-    valid, pos = parse_pipe_and_quote(input) do |cmd|
-        cmd, redir = parse_redir(cmd)
-        cmds.push(Struct::Command.new(cmd[0], cmd[1..-1], redir))
-    end
-
-    return valid ? [valid, cmds] : [valid, pos]
+    cmds = parse_pipe_and_quote(input)
+    return cmds if cmds.first == false
+    return [true,
+            cmds.map do |cmd|
+                cmd, redir = parse_redir(cmd)
+                Struct::Command.new(cmd[0], cmd[1..-1], redir)
+            end]
 end
