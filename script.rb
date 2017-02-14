@@ -58,11 +58,13 @@ def parse_pipe_and_quote(cmd_str, &block)
             if arg.length > 0
                 cmd.push(arg)
                 arg = ''
+                active_pipe = false
             end
 
-            active_pipe = false
-
         when '|'
+            # Complain if we have a pipe before
+            return [false, i] if active_pipe
+
             # Preserve pipes inside quotes
             if in_single_quote || in_double_quote
                 arg += cmd_str[i]
