@@ -18,11 +18,11 @@ end
 define_builtin :cd do |argv|
     return false if !check_arity(argv, [0, 1], :cd)
 
-    dir = argv.length == 0 ? Dir.home : File.expand_path(argv[0])
-    return error("cd: The directory '#{dir}' does not exist.") if
-        !Dir.exist?(dir)
+    dir = (argv.length == 0) ? Dir.home : File.expand_path(argv[0])
+    dir = (dir == '//' || dir == '/') ? dir : dir.gsub(/(\/)\/*$/, '\\1')
 
-    dir.gsub!(/\/+$/, '')
+    return error("cd: Directory '#{dir}' does not exist.") if !Dir.exist?(dir)
+
     $env[:PWD] = dir
     Dir.chdir(dir)
 
