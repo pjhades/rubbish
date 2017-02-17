@@ -17,6 +17,7 @@ class Integration < MiniTest::Unit::TestCase
         rd, wr = IO.pipe
         shell = Process.fork do
             $stdin.reopen(rd)
+            $stdout.reopen('/dev/null', 'w')
             wr.close
             Process.exec('ruby', File.join(Dir.pwd, 'rubbish.rb'))
         end
