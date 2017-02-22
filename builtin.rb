@@ -15,6 +15,10 @@ def check_arity(argv, valid_arity_values, sym)
     true
 end
 
+def call_builtin(name, argv)
+    self.send(name, argv)
+end
+
 define_builtin :cd do |argv|
     return false if !check_arity(argv, [0, 1], :cd)
 

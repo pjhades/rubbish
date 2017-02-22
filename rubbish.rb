@@ -9,7 +9,6 @@ require_relative 'util.rb'
 
 $shell = 'rubbish'
 
-signal_init
 job_init
 
 repl
