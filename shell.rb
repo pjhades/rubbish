@@ -1,7 +1,12 @@
-require_relative 'builtin.rb'
-require_relative 'env.rb'
-require_relative 'script.rb'
-require_relative 'util.rb'
+def signal_init
+    Signal.trap('SIGTTOU', 'SIG_IGN')
+    Signal.trap('SIGINT', 'SIG_IGN')
+end
+
+def restore_child_signal_handler
+    Signal.trap('SIGTTOU', 'SIG_DFL')
+    Signal.trap('SIGINT', 'SIG_DFL')
+end
 
 def read_line(prompt)
     print prompt
@@ -52,13 +57,16 @@ def search_path(prog)
     false
 end
 
-def spawn_child(cmd, stdin, stdout)
+def spawn_child(cmd, stdin, stdout, group_leader_pid)
     if !$builtins.include?(cmd.prog.to_sym) && !(prog = search_path cmd.prog)
         error("#{$shell}: Unknown command '#{cmd.prog}'")
         return false
     end
 
     Process.fork do 
+        Process.setpgid(0, group_leader_pid ? group_leader_pid : 0)
+        restore_child_signal_handler
+
         if !stdin.equal?($stdin)
             $stdin.reopen(stdin)
             stdin.close
@@ -105,6 +113,7 @@ def run_list(lst)
     stdin = $stdin
     stdout = $stdout
 
+    group_leader_pid = nil
     success = lst.each_with_index do |cmd, i|
         if i < lst.length - 1
             pipe = IO.pipe
@@ -113,8 +122,11 @@ def run_list(lst)
             stdout = $stdout
         end
 
-        pid = spawn_child(cmd, stdin, stdout)
+        pid = spawn_child(cmd, stdin, stdout, group_leader_pid)
         break false unless pid
+
+        group_leader_pid = pid if !group_leader_pid
+        Process.setpgid(pid, group_leader_pid)
 
         stdin.close unless stdin.equal?($stdin)
         stdout.close unless stdout.equal?($stdout)
@@ -129,6 +141,10 @@ def run_list(lst)
         return
     end
 
+    Termios.tcsetpgrp($stdin, group_leader_pid)
+
     pid, status = Process.waitall.find { |pid, status| pid == children.last }
     $env[:STATUS] = status.exitstatus == 0 ? 0 : 1
+
+    Termios.tcsetpgrp($stdin, $$)
 end
