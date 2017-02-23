@@ -109,7 +109,7 @@ def spawn_child(cmd, stdin, stdout, pgid)
         end
 
         if $builtins.include?(cmd.prog.to_sym)
-            exit self.send(builtin_name(cmd.prog), cmd.argv)
+            exit call_builtin(builtin_name(cmd.prog), cmd.argv)
         else
             Process.exec(prog, *cmd.argv)
         end
