@@ -13,9 +13,8 @@ def repl
                 blue($env[:PWD]) + " " + green($env[:PS1])
     end
 
-    Signal.trap('SIGINT') do
-        print "\n#{prompt.call}"
-    end
+    Signal.trap('SIGINT') { print "\n#{prompt.call}" }
+    Signal.trap('SIGTSTP', 'SIG_IGN')
 
     while line = read_line(prompt.call)
         input_lines += line
@@ -25,7 +24,7 @@ def repl
             if !valid
                 error("#{$shell}: invalid syntax:\n" +
                       "#{input_lines}\n" + ' ' * result + '^')
-            else
+            elsif lst.length > 0
                 job = Job.new(lst)
                 job.run
                 job.wait
