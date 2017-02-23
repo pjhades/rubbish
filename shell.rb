@@ -25,9 +25,9 @@ def repl
                 error("#{$shell}: invalid syntax:\n" +
                       "#{input_lines}\n" + ' ' * result + '^')
             elsif lst.length > 0
-                job = Job.new(lst)
+                job = Job.new(lst, input_lines)
                 job.run
-                job.wait
+                restore_shell if !job.wait
             end
             input_lines = ''
             slash = false
@@ -48,5 +48,5 @@ def search_path(prog)
         return full_path if File.exist?(full_path)
     end
 
-    false
+    return false
 end

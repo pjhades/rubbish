@@ -71,3 +71,11 @@ define_builtin :type do |argv|
 
     error("type: #{argv[0]}: not found")
 end
+
+define_builtin :jobs do |argv|
+    return false if !check_arity(argv, [0], :jobs)
+    $jobs.each_with_index do |kv, i|
+        pid, job = kv
+        puts "#{i} #{pid} #{job.stopped? ? 'stopped' : 'running'} #{job.cmd}"
+    end
+end

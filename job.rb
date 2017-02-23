@@ -3,27 +3,47 @@ require 'termios'
 $jobs = {}
 
 class Job
-    def initialize(lst)
+    def initialize(lst, cmd)
+        # process group id
         @pgid = nil
-        @procs = []
+        # map pid to status
+        @procs = {}
+        # parsed command list
         @lst = lst
+        # pid of last process in pipe
+        @last = nil
+        # command line
+        @cmd = cmd
     end
+
+    attr_accessor :pgid, :procs, :lst, :last, :cmd
 
     def to_foreground
         Termios.tcsetpgrp($stdin, @pgid)
     end
 
-    def restore_shell
-        Termios.tcsetpgrp($stdin, $$)
+    def stopped?
+        @procs.each_key.any? { |pid| @procs[pid] && @procs[pid].stopped? }
+    end
+
+    def completed?
+        @procs.each_key.all? { |pid| @procs[pid] && @procs[pid].exited? }
     end
 
     def wait
         return if !@pgid
-        pid, status = @procs.map { |pid| Process.wait2(pid) }
-                            .find { |pid, status| pid == @procs.last }
-        $env[:STATUS] = status.exitstatus == 0 ? 0 : 1
-        restore_shell
+
+        @procs.each_key do |pid|
+            next if @procs[pid] && @procs[pid].exited?
+            pid, status = Process.waitpid2(pid, Process::WUNTRACED)
+            @procs[pid] = status
+            return false if status.stopped?
+        end
+
+        $env[:STATUS] = @procs[@last].exitstatus == 0 ? 0 : 1
         $jobs.delete(@pgid)
+
+        return true
     end
 
     def run
@@ -54,8 +74,8 @@ class Job
             pid = spawn_child(cmd, stdin, stdout, @pgid)
             break false unless pid
 
-            @procs.push(pid)
-
+            @procs[pid] = nil
+            @last = pid if i == @lst.length - 1
             if !@pgid
                 @pgid = pid
                 $jobs[@pgid] = self
@@ -126,5 +146,10 @@ end
 
 def restore_child_signal_handler
     Signal.trap('SIGTTOU', 'SIG_DFL')
+    Signal.trap('SIGTSTP', 'SIG_DFL')
     Signal.trap('SIGINT', 'SIG_DFL')
+end
+
+def restore_shell
+    Termios.tcsetpgrp($stdin, $$)
 end
