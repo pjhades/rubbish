@@ -13,6 +13,10 @@ def repl
                 blue($env[:PWD]) + " " + green($env[:PS1])
     end
 
+    Signal.trap('SIGINT') do
+        print "\n#{prompt.call}"
+    end
+
     while line = read_line(prompt.call)
         input_lines += line
         if input_lines[-1] != '\\'

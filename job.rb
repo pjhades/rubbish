@@ -120,7 +120,6 @@ def job_init
     # Note that SIGTTOU should be ignored before
     # we create out own process group
     Signal.trap('SIGTTOU', 'SIG_IGN')
-    Signal.trap('SIGINT', 'SIG_IGN')
     Process.setpgid(0, 0)
     Termios.tcsetpgrp($stdin, $$)
 end
