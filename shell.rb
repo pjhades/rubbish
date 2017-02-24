@@ -20,12 +20,12 @@ def repl
         input_lines += line
         if input_lines[-1] != '\\'
             input_lines.strip!
-            valid, lst = parse(input_lines)
+            valid, result = parse(input_lines)
             if !valid
-                error("#{$shell}: invalid syntax:\n" +
-                      "#{input_lines}\n" + ' ' * result + '^')
-            elsif lst.length > 0
-                job = Job.new(lst, input_lines)
+                error("%s: invalid syntax:\n%s\n%s" % [
+                      $shell, input_lines, ' ' * result + '^'])
+            elsif result.length > 0
+                job = Job.new(result, input_lines)
                 job.run
             end
             input_lines = ''

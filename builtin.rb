@@ -10,7 +10,7 @@ def define_builtin(name, &block)
 end
 
 def check_arity(argv, valid_arity_values, sym)
-    return error("#{sym}: Invalid number of arguments.") if
+    return error("%s: Invalid number of arguments." % [sym]) if
         !valid_arity_values.include?(argv.length)
 
     return true
@@ -26,7 +26,7 @@ define_builtin :cd do |argv|
     dir = (argv.length == 0) ? Dir.home : File.expand_path(argv[0])
     dir = (dir == '//' || dir == '/') ? dir : dir.gsub(/(\/)\/*$/, '\\1')
 
-    return error("cd: Directory '#{dir}' does not exist.") if !Dir.exist?(dir)
+    return error("cd: Directory '%s' does not exist." % [dir]) if !Dir.exist?(dir)
 
     $env[:PWD] = dir
     Dir.chdir(dir)
@@ -39,7 +39,9 @@ define_builtin :set do |argv|
 
     case argv.length
     when 0
-        $env.each_pair { |k, v| puts "#{k} #{v.is_a?(Array) ? v.join(':') : v}" }
+        $env.each_pair do |k, v|
+            puts "%s %s" % [k, v.is_a?(Array) ? v.join(':') : v]
+        end
     when 1
         $env[argv[0].to_sym] = nil
     else
@@ -63,14 +65,14 @@ define_builtin :type do |argv|
     return false if !check_arity(argv, [1], :type)
 
     if $builtins.include?(argv[0].to_sym)
-        puts "#{argv[0]} is a shell builtin"
+        puts "%s is a shell builtin" % [argv[0]]
         return true
     elsif path = search_path(argv[0])
         puts path
         return true
     end
 
-    error("type: #{argv[0]}: not found")
+    error("type: %s: not found" % [argv[0]])
 end
 
 define_builtin :jobs do |argv|
@@ -90,7 +92,7 @@ define_builtin :fg do |argv|
 
     job = argv.length == 0 ? $curr_job : $jobs[argv[0].to_i - 1]
 
-    return error('fg: no such job') if !job
+    return error("fg: no such job") if !job
 
     job.continue
     return true

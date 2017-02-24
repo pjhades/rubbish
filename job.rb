@@ -118,7 +118,7 @@ end
 
 def spawn_child(cmd, stdin, stdout, pgid)
     if !$builtins.include?(cmd.prog.to_sym) && !(prog = search_path cmd.prog)
-        error("#{$shell}: Unknown command '#{cmd.prog}'")
+        error("%s: Unknown command '%s'" % [$shell, cmd.prog])
         return false
     end
 
