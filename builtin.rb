@@ -74,8 +74,11 @@ end
 
 define_builtin :jobs do |argv|
     return false if !check_arity(argv, [0], :jobs)
-    $jobs.each_with_index do |kv, i|
-        pid, job = kv
-        puts "#{i} #{pid} #{job.stopped? ? 'stopped' : 'running'} #{job.cmd}"
+    $jobs.each_with_index do |job, i|
+        puts "#{i} #{job.pgid} #{job.stopped? ? 'stopped' : 'running'} #{job.cmd}"
     end
+end
+
+define_builtin :fg do |argv|
+    return false if !check_arity(argv, [1], :fg)
 end

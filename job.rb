@@ -1,6 +1,6 @@
 require 'termios'
 
-$jobs = {}
+$jobs = []
 
 class Job
     def initialize(lst, cmd)
@@ -41,7 +41,7 @@ class Job
         end
 
         $env[:STATUS] = @procs[@last].exitstatus == 0 ? 0 : 1
-        $jobs.delete(@pgid)
+        $jobs.delete(self)
 
         return true
     end
@@ -78,7 +78,7 @@ class Job
             @last = pid if i == @lst.length - 1
             if !@pgid
                 @pgid = pid
-                $jobs[@pgid] = self
+                $jobs.push(self)
             end
             Process.setpgid(pid, @pgid)
 
