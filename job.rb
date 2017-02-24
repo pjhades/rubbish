@@ -1,6 +1,8 @@
 require 'termios'
 
 $jobs = []
+$curr_job = nil
+$prev_job = nil
 
 class Job
     def initialize(lst, cmd)
@@ -16,7 +18,13 @@ class Job
         @cmd = cmd
     end
 
-    attr_accessor :pgid, :procs, :lst, :last, :cmd
+    attr_reader :lst, :state, :cmd
+    attr_accessor :pgid, :procs, :last
+
+    def state
+        stopped? ? 'stopped' :
+            completed? ? 'completed' : 'running'
+    end
 
     def to_foreground
         Termios.tcsetpgrp($stdin, @pgid)
@@ -37,13 +45,15 @@ class Job
             next if @procs[pid] && @procs[pid].exited?
             pid, status = Process.waitpid2(pid, Process::WUNTRACED)
             @procs[pid] = status
-            return false if status.stopped?
+            break if status.stopped?
         end
 
-        $env[:STATUS] = @procs[@last].exitstatus == 0 ? 0 : 1
-        $jobs.delete(self)
+        if completed?
+            $env[:STATUS] = @procs[@last].exitstatus == 0 ? 0 : 1
+            $jobs.delete(self)
+        end
 
-        return true
+        restore_shell
     end
 
     def run
@@ -79,6 +89,7 @@ class Job
             if !@pgid
                 @pgid = pid
                 $jobs.push(self)
+                shift_job(self)
             end
             Process.setpgid(pid, @pgid)
 
@@ -94,6 +105,14 @@ class Job
         end
 
         to_foreground
+        wait
+    end
+
+    def continue
+        shift_job(self)
+        to_foreground
+        Process.kill('SIGCONT', -@pgid)
+        wait
     end
 end
 
@@ -134,6 +153,11 @@ def spawn_child(cmd, stdin, stdout, pgid)
             Process.exec(prog, *cmd.argv)
         end
     end
+end
+
+def shift_job(job)
+    $prev_job = $curr_job
+    $curr_job = job
 end
 
 def job_init

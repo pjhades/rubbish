@@ -12,7 +12,8 @@ end
 def check_arity(argv, valid_arity_values, sym)
     return error("#{sym}: Invalid number of arguments.") if
         !valid_arity_values.include?(argv.length)
-    true
+
+    return true
 end
 
 def call_builtin(name, argv)
@@ -30,7 +31,7 @@ define_builtin :cd do |argv|
     $env[:PWD] = dir
     Dir.chdir(dir)
 
-    true
+    return true
 end
 
 define_builtin :set do |argv|
@@ -45,7 +46,7 @@ define_builtin :set do |argv|
         $env[argv[0].to_sym] = argv[1]
     end
 
-    true
+    return true
 end
 
 define_builtin :exit do |argv|
@@ -55,7 +56,7 @@ end
 
 define_builtin :echo do |argv|
     puts argv.join(' ')
-    true
+    return true
 end
 
 define_builtin :type do |argv|
@@ -74,11 +75,23 @@ end
 
 define_builtin :jobs do |argv|
     return false if !check_arity(argv, [0], :jobs)
+
     $jobs.each_with_index do |job, i|
-        puts "#{i} #{job.pgid} #{job.stopped? ? 'stopped' : 'running'} #{job.cmd}"
+        mark = job.equal?($curr_job) ? '+' :
+               job.equal?($prev_job) ? '-' : ' '
+        puts "[%d]%c %d %-10s %s" % [i+1, mark, job.pgid, job.state, job.cmd]
     end
+
+    return true
 end
 
 define_builtin :fg do |argv|
-    return false if !check_arity(argv, [1], :fg)
+    return false if !check_arity(argv, [0, 1], :fg)
+
+    job = argv.length == 0 ? $curr_job : $jobs[argv[0].to_i - 1]
+
+    return error('fg: no such job') if !job
+
+    job.continue
+    return true
 end

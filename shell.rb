@@ -27,7 +27,6 @@ def repl
             elsif lst.length > 0
                 job = Job.new(lst, input_lines)
                 job.run
-                restore_shell if !job.wait
             end
             input_lines = ''
             slash = false
