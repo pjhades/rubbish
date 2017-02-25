@@ -30,7 +30,7 @@ class Job
     end
 
     def restore_shell
-        @attr = Termios.tcgetpgrp($stdin)
+        @attr = Termios.tcgetattr($stdin)
         Termios.tcsetattr($stdin, Termios::TCSANOW, $shell_attr)
         Termios.tcsetpgrp($stdin, $$)
     end
@@ -62,6 +62,7 @@ class Job
         if completed?
             $env[:STATUS] = @procs[@last].exitstatus == 0 ? 0 : 1
             $jobs.delete(self)
+            set_curr_and_prev_job($prev_job, nil)
         end
 
         restore_shell
@@ -100,7 +101,7 @@ class Job
             if !@pgid
                 @pgid = pid
                 $jobs.push(self)
-                shift_job(self)
+                set_curr_and_prev_job(self, $curr_job)
             end
             Process.setpgid(pid, @pgid)
 
@@ -120,7 +121,7 @@ class Job
     end
 
     def continue
-        shift_job(self)
+        set_curr_and_prev_job(self, $curr_job)
         to_foreground
         Process.kill('SIGCONT', -@pgid)
         wait
@@ -166,9 +167,11 @@ def spawn_child(cmd, stdin, stdout, pgid)
     end
 end
 
-def shift_job(job)
-    $prev_job = $curr_job
-    $curr_job = job
+def set_curr_and_prev_job(curr, prev)
+    # Set curr as the current job only if it's not
+    # the current job, otherwise we'll end up with
+    # both $curr_job and $prev_job pointing to curr
+    $curr_job, $prev_job = curr, prev if curr != $curr_job
 end
 
 def job_init
