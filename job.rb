@@ -1,6 +1,7 @@
 require 'termios'
 
 $jobs = []
+$shell_attr = nil
 $curr_job = nil
 $prev_job = nil
 
@@ -16,6 +17,8 @@ class Job
         @last = nil
         # command line
         @cmd = cmd
+        # terminal settings
+        @attr = nil
     end
 
     attr_reader :lst, :state, :cmd
@@ -26,7 +29,15 @@ class Job
             completed? ? 'completed' : 'running'
     end
 
+    def restore_shell
+        @attr = Termios.tcgetpgrp($stdin)
+        Termios.tcsetattr($stdin, Termios::TCSANOW, $shell_attr)
+        Termios.tcsetpgrp($stdin, $$)
+    end
+
     def to_foreground
+        $shell_attr = Termios.tcgetattr($stdin)
+        Termios.tcsetattr($stdin, Termios::TCSANOW, @attr ? @attr : $shell_attr)
         Termios.tcsetpgrp($stdin, @pgid)
     end
 
@@ -172,8 +183,4 @@ def restore_child_signal_handler
     Signal.trap('SIGTTOU', 'SIG_DFL')
     Signal.trap('SIGTSTP', 'SIG_DFL')
     Signal.trap('SIGINT', 'SIG_DFL')
-end
-
-def restore_shell
-    Termios.tcsetpgrp($stdin, $$)
 end
