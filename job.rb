@@ -1,33 +1,39 @@
 require 'termios'
 
+# List of all jobs
 $jobs = []
+# Maps PID to a job
+$pid_job = {}
+# Shell terminal attributes
 $shell_attr = nil
+# For `fg` and `jobs`, to determine current and previous job
 $curr_job = nil
 $prev_job = nil
+# Number of SIGCHLD signals we received
+$n_sigchld = 0
 
 class Job
     def initialize(lst, cmd)
-        # process group id
+        # Process group id
         @pgid = nil
-        # map pid to status
-        @procs = {}
-        # parsed command list
+        # PIDs in this job
+        @pids = []
+        # Parsed command list
         @lst = lst
-        # pid of last process in pipe
-        @last = nil
-        # command line
+        # Command line
         @cmd = cmd
-        # terminal settings
+        # Terminal settings
         @attr = nil
+        # State
+        @state = :running
+        # Exit status of the last process in the pipe
+        @exitstatus = nil
+        # Number of children reaped
+        @n_reaped = 0
     end
 
-    attr_reader :lst, :state, :cmd
-    attr_accessor :pgid, :procs, :last
-
-    def state
-        stopped? ? 'stopped' :
-            completed? ? 'completed' : 'running'
-    end
+    attr_reader :lst, :cmd
+    attr_accessor :pgid, :pids, :last, :state, :exitstatus, :n_reaped
 
     def restore_shell
         @attr = Termios.tcgetattr($stdin)
@@ -41,28 +47,42 @@ class Job
         Termios.tcsetpgrp($stdin, @pgid)
     end
 
-    def stopped?
-        @procs.each_key.any? { |pid| @procs[pid] && @procs[pid].stopped? }
+    def mark_reaped_child(pid, status)
+        @n_reaped += 1
+        $n_sigchld -= 1
+        if pid == @pids.last
+            @exitstatus = status.exited? ?
+                status.exitstatus : status.termsig + 128 if pid == @pids.last
+        end
     end
 
-    def completed?
-        @procs.each_key.all? { |pid| @procs[pid] && @procs[pid].exited? }
+    def cleanup
+        $env[:STATUS] = @exitstatus
+        $jobs.delete(self)
+        @pids.each { |pid| $pid_job.delete(pid) }
+        set_curr_and_prev_job($prev_job,
+                              $jobs.first == $prev_job ? nil : $jobs.first)
     end
 
     def wait
         return if !@pgid
 
-        @procs.each_key do |pid|
-            next if @procs[pid] && @procs[pid].exited?
-            pid, status = Process.waitpid2(pid, Process::WUNTRACED)
-            @procs[pid] = status
-            break if status.stopped?
+        n_stopped = 0
+        while @n_reaped < @pids.length && n_stopped < @pids.length - @n_reaped
+            # Only wait for children in the foreground group
+            pid, status = Process.waitpid2(-@pgid, Process::WUNTRACED)
+            # If the child is stopped ...
+            n_stopped += 1 if status.stopped?
+            # ... or terminated
+            mark_reaped_child(pid, status) if status.exited? || status.signaled?
         end
 
-        if completed?
-            $env[:STATUS] = @procs[@last].exitstatus == 0 ? 0 : 1
-            $jobs.delete(self)
-            set_curr_and_prev_job($prev_job, nil)
+        if n_stopped == @pids.length
+            # Mark the job stopped if all foreground children are stopped
+            @state = :stopped
+        elsif @n_reaped == @pids.length
+            # Clean up the job if all children are reaped
+            cleanup
         end
 
         restore_shell
@@ -96,13 +116,13 @@ class Job
             pid = spawn_child(cmd, stdin, stdout, @pgid)
             break false unless pid
 
-            @procs[pid] = nil
-            @last = pid if i == @lst.length - 1
             if !@pgid
                 @pgid = pid
                 $jobs.push(self)
                 set_curr_and_prev_job(self, $curr_job)
             end
+            @pids.push(pid)
+            $pid_job[pid] = self
             Process.setpgid(pid, @pgid)
 
             stdin.close unless stdin.equal?($stdin)
@@ -111,7 +131,13 @@ class Job
         end
 
         if !success
-            @procs.each { |pid| Process.kill('SIGTERM', pid) }
+            # Run failed, kill them all
+            @pids.each do |pid|
+                Process.kill('SIGKILL', pid)
+                Process.waitpid2(pid)
+                pid_job.delete(pid)
+            end
+            $jobs.delete(self)
             $env[:STATUS] = 1
             return
         end
@@ -178,12 +204,27 @@ def job_init
     # Note that SIGTTOU should be ignored before
     # we create out own process group
     Signal.trap('SIGTTOU', 'SIG_IGN')
+    Signal.trap('SIGTTIN', 'SIG_IGN')
+
+    # Record the number of dead children
+    Signal.trap('SIGCHLD') { |sig| $n_sigchld += 1 }
+
     Process.setpgid(0, 0)
     Termios.tcsetpgrp($stdin, $$)
 end
 
 def restore_child_signal_handler
+    Signal.trap('SIGTTIN', 'SIG_DFL')
     Signal.trap('SIGTTOU', 'SIG_DFL')
     Signal.trap('SIGTSTP', 'SIG_DFL')
-    Signal.trap('SIGINT', 'SIG_DFL')
+    Signal.trap('SIGINT',  'SIG_DFL')
+end
+
+def reap_haunting_children
+    while $n_sigchld > 0
+        pid, status = Process.waitpid2(-1, Process::WNOHANG)
+        job = $pid_job[pid]
+        job.mark_reaped_child(pid, status)
+        job.cleanup if job.n_reaped == job.pids.length
+    end
 end
