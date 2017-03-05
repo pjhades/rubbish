@@ -34,6 +34,8 @@ def repl
             input_lines.chop!
             slash = true
         end
+
+        reap_haunting_children(true)
     end
 end
 

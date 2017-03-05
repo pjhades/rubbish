@@ -1,5 +1,7 @@
 $builtins = []
 
+JOB_REPORT_FORMAT = "[%d]%c %d %-10s %s"
+
 def builtin_name(prog)
     return ('builtin_' + prog).to_sym
 end
@@ -78,11 +80,12 @@ end
 define_builtin :jobs do |argv|
     return false if !check_arity(argv, [0], :jobs)
 
-    $jobs.each_with_index do |job, i|
-        mark = job.equal?($curr_job) ? '+' :
-               job.equal?($prev_job) ? '-' : ' '
-        puts "[%d]%c %d %-10s %s" % [i+1, mark, job.pgid, job.state, job.cmd]
-    end
+    # Reap any dead children before reporting
+    reap_haunting_children
+
+    $jobs.each { |job| job.report_state }
+    $jobs -= $jobs.select { |job| job.state == 'Done' ||
+                                  job.state == 'Terminated' }
 
     return true
 end
@@ -96,4 +99,12 @@ define_builtin :fg do |argv|
 
     job.continue
     return true
+end
+
+define_builtin :debug do |argv|
+    $jobs.each do |job|
+        puts "job #{job.pgid} #{job.state} #{job.cmd}"
+    end
+    puts "curr: #{$curr_job ? $curr_job.pgid : 'n/a'}"
+    puts "prev: #{$prev_job ? $prev_job.pgid : 'n/a'}"
 end

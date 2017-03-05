@@ -155,7 +155,7 @@ end
 
 def parse(input)
     # TODO Now we assume that
-    # - input has no ||, &&, &, and ;
+    # - input has no ||, &&, and ;
     # - input has only commands possibly connected by pipes
     # - each command has the syntax
     #

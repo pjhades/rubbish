@@ -14,6 +14,8 @@ $n_sigchld = 0
 
 class Job
     def initialize(lst, cmd)
+        # Index in $jobs list
+        @index = -1
         # Process group id
         @pgid = nil
         # PIDs in this job
@@ -25,14 +27,17 @@ class Job
         # Terminal settings
         @attr = nil
         # State
-        @state = :running
+        @state = 'Running'
         # Exit status of the last process in the pipe
         @exitstatus = nil
         # Number of children reaped
         @n_reaped = 0
+        # Run in background
+        @background = lst.last.argv.last == '&'
+        lst.last.argv.pop if @background
     end
 
-    attr_reader :lst, :cmd
+    attr_reader :lst, :cmd, :background
     attr_accessor :pgid, :pids, :last, :state, :exitstatus, :n_reaped
 
     def restore_shell
@@ -50,18 +55,41 @@ class Job
     def mark_reaped_child(pid, status)
         @n_reaped += 1
         $n_sigchld -= 1
-        if pid == @pids.last
-            @exitstatus = status.exited? ?
-                status.exitstatus : status.termsig + 128 if pid == @pids.last
-        end
+        @exitstatus = status if pid == @pids.last
     end
 
-    def cleanup
-        $env[:STATUS] = @exitstatus
-        $jobs.delete(self)
+    def cleanup(report = false)
+        if @exitstatus.exited?
+            $env[:STATUS] = @exitstatus.exitstatus
+            @state = 'Done'
+        else
+            $env[:STATUS] = @exitstatus.termsig + 128
+            @state = 'Terminated'
+        end
+
+        report_state if report
+
         @pids.each { |pid| $pid_job.delete(pid) }
-        set_curr_and_prev_job($prev_job,
-                              $jobs.first == $prev_job ? nil : $jobs.first)
+
+        # Pick the new previous/current job.
+        # We should never choose this dead job.
+        can = [$prev_job, $curr_job, $jobs.first]
+        idx = can.find_index { |job| !self.equal?(job) }
+        curr = idx ? can[idx] : nil
+
+        # $jobs may not have that many elements, but accessing
+        # such an index would give us nil
+        can = [$jobs.first, $jobs[1], $jobs[2]]
+        idx = can.find_index { |job| !self.equal?(job) && !curr.equal?(job) }
+        prev = idx ? can[idx] : nil
+
+        set_curr_and_prev_job(curr, prev)
+    end
+
+    def report_state
+        mark = self.equal?($curr_job) ? '+' :
+               self.equal?($prev_job) ? '-' : ' '
+        puts JOB_REPORT_FORMAT % [@index, mark, @pgid, @state, @cmd]
     end
 
     def wait
@@ -79,7 +107,7 @@ class Job
 
         if n_stopped == @pids.length
             # Mark the job stopped if all foreground children are stopped
-            @state = :stopped
+            @state = 'Stopped'
         elsif @n_reaped == @pids.length
             # Clean up the job if all children are reaped
             cleanup
@@ -119,6 +147,7 @@ class Job
             if !@pgid
                 @pgid = pid
                 $jobs.push(self)
+                @index = $jobs.length - 1
                 set_curr_and_prev_job(self, $curr_job)
             end
             @pids.push(pid)
@@ -142,8 +171,12 @@ class Job
             return
         end
 
-        to_foreground
-        wait
+        if !@background
+            to_foreground
+            wait
+        end
+
+        reap_haunting_children(true)
     end
 
     def continue
@@ -151,6 +184,8 @@ class Job
         to_foreground
         Process.kill('SIGCONT', -@pgid)
         wait
+
+        reap_haunting_children
     end
 end
 
@@ -194,10 +229,7 @@ def spawn_child(cmd, stdin, stdout, pgid)
 end
 
 def set_curr_and_prev_job(curr, prev)
-    # Set curr as the current job only if it's not
-    # the current job, otherwise we'll end up with
-    # both $curr_job and $prev_job pointing to curr
-    $curr_job, $prev_job = curr, prev if curr != $curr_job
+    $curr_job, $prev_job = curr, prev if !curr.equal?(prev) || !curr && !prev
 end
 
 def job_init
@@ -220,11 +252,14 @@ def restore_child_signal_handler
     Signal.trap('SIGINT',  'SIG_DFL')
 end
 
-def reap_haunting_children
+def reap_haunting_children(report = false)
     while $n_sigchld > 0
         pid, status = Process.waitpid2(-1, Process::WNOHANG)
         job = $pid_job[pid]
         job.mark_reaped_child(pid, status)
-        job.cleanup if job.n_reaped == job.pids.length
+        if job.n_reaped == job.pids.length
+            job.cleanup(report)
+            $jobs.delete(job) if report
+        end
     end
 end
