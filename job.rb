@@ -111,6 +111,7 @@ class Job
         elsif @n_reaped == @pids.length
             # Clean up the job if all children are reaped
             cleanup
+            $jobs.delete(self)
         end
 
         restore_shell
