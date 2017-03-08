@@ -47,7 +47,6 @@ class Job
     end
 
     def to_foreground
-        $shell_attr = Termios.tcgetattr($stdin)
         Termios.tcsetattr($stdin, Termios::TCSANOW, @attr ? @attr : $shell_attr)
         Termios.tcsetpgrp($stdin, @pgid)
     end
@@ -134,6 +133,9 @@ class Job
         stdin = $stdin
         stdout = $stdout
 
+        # Store current terminal attributes
+        $shell_attr = Termios.tcgetattr($stdin)
+
         success = @lst.each_with_index do |cmd, i|
             if i < @lst.length - 1
                 pipe = IO.pipe
@@ -142,22 +144,47 @@ class Job
                 stdout = $stdout
             end
 
-            pid = spawn_child(cmd, stdin, stdout, @pgid)
-            break false unless pid
-
-            if !@pgid
-                @pgid = pid
-                $jobs.push(self)
-                @index = $jobs.length - 1
-                set_curr_and_prev_job(self, $curr_job)
+            prog_full_path = search_path(cmd.prog)
+            if !$builtins.include?(cmd.prog.to_sym) && !prog_full_path
+                error("%s: Unknown command '%s'" % [$shell, cmd.prog])
+                break false
             end
-            @pids.push(pid)
-            $pid_job[pid] = self
-            Process.setpgid(pid, @pgid)
 
-            stdin.close unless stdin.equal?($stdin)
-            stdout.close unless stdout.equal?($stdout)
-            stdin = pipe[0]
+            pid = spawn_child(cmd, stdin, stdout, @pgid)
+
+            if pid
+                # Parent process
+                if !@pgid
+                    @pgid = pid
+                    $jobs.push(self)
+                    @index = $jobs.length - 1
+                    set_curr_and_prev_job(self, $curr_job)
+                end
+                @pids.push(pid)
+                $pid_job[pid] = self
+                setpgid_noexcept(pid, @pgid)
+
+                stdin.close unless stdin.equal?($stdin)
+                stdout.close unless stdout.equal?($stdout)
+                stdin = pipe[0]
+            else
+                # Child process
+                @pgid = Process.pid
+
+                to_foreground if !@background && i == 0
+
+                # The signals, especially SIGTTOU, should be ignored
+                # until the child has been successfully put to foreground
+                # otherwise it will be sent SIGTTOU because it has called
+                # tcsetpgrp(3) when it was in background
+                restore_child_signals
+
+                if $builtins.include?(cmd.prog.to_sym)
+                    exit call_builtin(builtin_name(cmd.prog), cmd.argv)
+                else
+                    Process.exec(prog_full_path, *cmd.argv)
+                end
+            end
         end
 
         if !success
@@ -172,11 +199,7 @@ class Job
             return
         end
 
-        if !@background
-            to_foreground
-            wait
-        end
-
+        wait if !@background
         reap_haunting_children(true)
     end
 
@@ -191,14 +214,11 @@ class Job
 end
 
 def spawn_child(cmd, stdin, stdout, pgid)
-    if !$builtins.include?(cmd.prog.to_sym) && !(prog = search_path cmd.prog)
-        error("%s: Unknown command '%s'" % [$shell, cmd.prog])
-        return false
-    end
-
-    Process.fork do
-        Process.setpgid(0, pgid ? pgid : 0)
-        restore_child_signal_handler
+    pid = Process.fork
+    if !pid
+        # Child process
+        setpgid_noexcept(0, pgid ? pgid : 0)
+        set_child_signals
 
         if !stdin.equal?($stdin)
             $stdin.reopen(stdin)
@@ -220,13 +240,8 @@ def spawn_child(cmd, stdin, stdout, pgid)
                 $stderr.reopen(f) if cmd.redirs[$stderr].include?([file, mode])
             end
         end
-
-        if $builtins.include?(cmd.prog.to_sym)
-            exit call_builtin(builtin_name(cmd.prog), cmd.argv)
-        else
-            Process.exec(prog, *cmd.argv)
-        end
     end
+    return pid
 end
 
 def set_curr_and_prev_job(curr, prev)
@@ -242,15 +257,22 @@ def job_init
     # Record the number of dead children
     Signal.trap('SIGCHLD') { |sig| $n_sigchld += 1 }
 
-    Process.setpgid(0, 0)
+    setpgid_noexcept(0, 0)
     Termios.tcsetpgrp($stdin, $$)
 end
 
-def restore_child_signal_handler
+def set_child_signals
+    Signal.trap('SIGTTIN', 'SIG_IGN')
+    Signal.trap('SIGTTOU', 'SIG_IGN')
+    Signal.trap('SIGTSTP', 'SIG_IGN')
+    Signal.trap('SIGCHLD', 'SIG_IGN')
+end
+
+def restore_child_signals
     Signal.trap('SIGTTIN', 'SIG_DFL')
     Signal.trap('SIGTTOU', 'SIG_DFL')
     Signal.trap('SIGTSTP', 'SIG_DFL')
-    Signal.trap('SIGINT',  'SIG_DFL')
+    Signal.trap('SIGCHLD', 'SIG_DFL')
 end
 
 def reap_haunting_children(report = false)
@@ -262,5 +284,12 @@ def reap_haunting_children(report = false)
             job.cleanup(report)
             $jobs.delete(job) if report
         end
+    end
+end
+
+def setpgid_noexcept(pid, pgid)
+    begin
+        Process.setpgid(pid, pgid)
+    rescue
     end
 end
