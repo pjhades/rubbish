@@ -28,15 +28,17 @@ class Job
         @state = 'Running'
         # Exit status of the last process in the pipe
         @exitstatus = nil
-        # Number of children reaped
+        # Number of children reaped and stopped
         @n_reaped = 0
+        @n_stopped = 0
         # Run in background
         @background = lst.last.argv.last == '&'
         lst.last.argv.pop if @background
     end
 
     attr_reader :lst, :cmd, :background
-    attr_accessor :pgid, :pids, :last, :state, :exitstatus, :n_reaped, :attr
+    attr_accessor :pgid, :pids, :last, :state, :exitstatus,
+                  :n_reaped, :n_stopped, :attr
 
     def restore_shell
         @attr = Termios.tcgetattr($stdin)
@@ -89,19 +91,17 @@ class Job
     end
 
     def wait
-        return if !@pgid
-
-        n_stopped = 0
-        while @n_reaped < @pids.length && n_stopped < @pids.length - @n_reaped
+        @n_stopped = 0
+        while @n_reaped < @pids.length && @n_stopped < @pids.length - @n_reaped
             # Only wait for children in the foreground group
             pid, status = Process.waitpid2(-@pgid, Process::WUNTRACED)
             # If the child is stopped ...
-            n_stopped += 1 if status.stopped?
+            @n_stopped += 1 if status.stopped?
             # ... or terminated
             mark_reaped_child(pid, status) if status.exited? || status.signaled?
         end
 
-        if n_stopped == @pids.length
+        if @n_stopped == @pids.length
             # Mark the job stopped if all foreground children are stopped
             @state = 'Stopped'
         elsif @n_reaped == @pids.length
@@ -276,14 +276,22 @@ end
 def reap_haunting_children(report = false)
     while true
         begin
-            pid, status = Process.waitpid2(-1, Process::WNOHANG)
+            # Here we need to wait for stopped children to handle
+            # the situations where background children are sent
+            # stop signals
+            pid, status = Process.waitpid2(-1, Process::WNOHANG |
+                                               Process::WUNTRACED)
 
             # Child may be stopped
             break if !pid
 
             job = $pid_job[pid]
-            job.mark_reaped_child(pid, status)
-            if job.n_reaped == job.pids.length
+            job.n_stopped += 1 if status.stopped?
+            job.mark_reaped_child(pid, status) if status.exited? || status.signaled?
+
+            if job.n_stopped == job.pids.length
+                job.state = 'Stopped'
+            elsif job.n_reaped == job.pids.length
                 job.cleanup(report)
                 $jobs.delete(job) if report
             end
