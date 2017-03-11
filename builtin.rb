@@ -93,7 +93,7 @@ end
 define_builtin :fg do |argv|
     return false if !check_arity(argv, [0, 1], :fg)
 
-    job = argv.length == 0 ? $curr_job : $jobs[argv[0].to_i - 1]
+    job = argv.length == 0 ? $curr_job : $jobs[argv[0].to_i]
 
     return error("fg: no such job") if !job
 
@@ -105,6 +105,6 @@ define_builtin :debug do |argv|
     $jobs.each do |job|
         puts "job #{job.pgid} #{job.state} #{job.cmd}"
     end
-    puts "curr: #{$curr_job ? $curr_job.pgid : 'n/a'}"
-    puts "prev: #{$prev_job ? $prev_job.pgid : 'n/a'}"
+    puts "curr: #{$curr_job ? $curr_job.pgid : 'nil'}"
+    puts "prev: #{$prev_job ? $prev_job.pgid : 'nil'}"
 end
