@@ -9,8 +9,6 @@ $shell_attr = nil
 # For `fg` and `jobs`, to determine current and previous job
 $curr_job = nil
 $prev_job = nil
-# Number of SIGCHLD signals we received
-$n_sigchld = 0
 
 class Job
     def initialize(lst, cmd)
@@ -38,7 +36,7 @@ class Job
     end
 
     attr_reader :lst, :cmd, :background
-    attr_accessor :pgid, :pids, :last, :state, :exitstatus, :n_reaped
+    attr_accessor :pgid, :pids, :last, :state, :exitstatus, :n_reaped, :attr
 
     def restore_shell
         @attr = Termios.tcgetattr($stdin)
@@ -53,7 +51,6 @@ class Job
 
     def mark_reaped_child(pid, status)
         @n_reaped += 1
-        $n_sigchld -= 1
         @exitstatus = status if pid == @pids.last
     end
 
@@ -249,13 +246,16 @@ def set_curr_and_prev_job(curr, prev)
 end
 
 def job_init
-    # Note that SIGTTOU should be ignored before
-    # we create out own process group
+    # Note that
+    #
+    # 1. SIGTTOU should be ignored before we create out own
+    #    process group.
+    #
+    # 2. DO NOT ignore SIGCHLD here, as in that case
+    #    waitpid(2) would return -1 and we will get ECHILD even if we
+    #    wait for our own children. See waitpid(2).
     Signal.trap('SIGTTOU', 'SIG_IGN')
     Signal.trap('SIGTTIN', 'SIG_IGN')
-
-    # Record the number of dead children
-    Signal.trap('SIGCHLD') { |sig| $n_sigchld += 1 }
 
     setpgid_noexcept(0, 0)
     Termios.tcsetpgrp($stdin, $$)
@@ -265,24 +265,30 @@ def set_child_signals
     Signal.trap('SIGTTIN', 'SIG_IGN')
     Signal.trap('SIGTTOU', 'SIG_IGN')
     Signal.trap('SIGTSTP', 'SIG_IGN')
-    Signal.trap('SIGCHLD', 'SIG_IGN')
 end
 
 def restore_child_signals
     Signal.trap('SIGTTIN', 'SIG_DFL')
     Signal.trap('SIGTTOU', 'SIG_DFL')
     Signal.trap('SIGTSTP', 'SIG_DFL')
-    Signal.trap('SIGCHLD', 'SIG_DFL')
 end
 
 def reap_haunting_children(report = false)
-    while $n_sigchld > 0
-        pid, status = Process.waitpid2(-1, Process::WNOHANG)
-        job = $pid_job[pid]
-        job.mark_reaped_child(pid, status)
-        if job.n_reaped == job.pids.length
-            job.cleanup(report)
-            $jobs.delete(job) if report
+    while true
+        begin
+            pid, status = Process.waitpid2(-1, Process::WNOHANG)
+
+            # Child may be stopped
+            break if !pid
+
+            job = $pid_job[pid]
+            job.mark_reaped_child(pid, status)
+            if job.n_reaped == job.pids.length
+                job.cleanup(report)
+                $jobs.delete(job) if report
+            end
+        rescue Errno::ECHILD
+            break
         end
     end
 end
