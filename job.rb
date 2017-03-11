@@ -104,7 +104,8 @@ class Job
         if @n_stopped == @pids.length
             # Mark the job stopped if all foreground children are stopped
             @state = 'Stopped'
-        elsif @n_reaped == @pids.length
+        end
+        if @n_reaped == @pids.length
             # Clean up the job if all children are reaped
             cleanup
             $jobs.delete(self)
@@ -291,7 +292,8 @@ def reap_haunting_children(report = false)
 
             if job.n_stopped == job.pids.length
                 job.state = 'Stopped'
-            elsif job.n_reaped == job.pids.length
+            end
+            if job.n_reaped == job.pids.length
                 job.cleanup(report)
                 $jobs.delete(job) if report
             end
