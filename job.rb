@@ -40,7 +40,7 @@ class Job
 
     attr_reader :lst, :cmd, :background
     attr_accessor :pgid, :pids, :last, :state, :exitstatus,
-                  :n_reaped, :n_stopped, :attr
+                  :n_reaped, :n_stopped, :attr, :background
 
     def restore_shell
         @attr = Termios.tcgetattr($shell_tty)
@@ -192,7 +192,7 @@ class Job
             @pids.each do |pid|
                 Process.kill('SIGKILL', pid)
                 Process.waitpid2(pid)
-                pid_job.delete(pid)
+                $pid_job.delete(pid)
             end
             $jobs.delete(self)
             $env[:STATUS] = 1
@@ -205,9 +205,9 @@ class Job
 
     def continue
         set_curr_and_prev_job(self, $curr_job)
-        to_foreground
+        to_foreground if !@background
         Process.kill('SIGCONT', -@pgid)
-        wait
+        wait if !@background
 
         reap_haunting_children
     end

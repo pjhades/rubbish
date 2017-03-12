@@ -11,9 +11,9 @@ def define_builtin(name, &block)
     $builtins.push(name)
 end
 
-def check_arity(argv, valid_arity_values, sym)
+def check_arity(argv, min, max, sym)
     return error("%s: Invalid number of arguments." % [sym]) if
-        !valid_arity_values.include?(argv.length)
+           min && argv.length < min || max && argv.length > max
 
     return true
 end
@@ -23,7 +23,7 @@ def call_builtin(name, argv)
 end
 
 define_builtin :cd do |argv|
-    return false if !check_arity(argv, [0, 1], :cd)
+    return false if !check_arity(argv, 0, 1, :cd)
 
     dir = (argv.length == 0) ? Dir.home : File.expand_path(argv[0])
     dir = (dir == '//' || dir == '/') ? dir : dir.gsub(/(\/)\/*$/, '\\1')
@@ -37,7 +37,7 @@ define_builtin :cd do |argv|
 end
 
 define_builtin :set do |argv|
-    return false if !check_arity(argv, [0, 1, 2], :set)
+    return false if !check_arity(argv, 0, 2, :set)
 
     case argv.length
     when 0
@@ -54,7 +54,7 @@ define_builtin :set do |argv|
 end
 
 define_builtin :exit do |argv|
-    return false if !check_arity(argv, [0], :exit)
+    return false if !check_arity(argv, 0, 0, :exit)
     exit
 end
 
@@ -64,7 +64,7 @@ define_builtin :echo do |argv|
 end
 
 define_builtin :type do |argv|
-    return false if !check_arity(argv, [1], :type)
+    return false if !check_arity(argv, 1, 1, :type)
 
     if $builtins.include?(argv[0].to_sym)
         puts "%s is a shell builtin" % [argv[0]]
@@ -78,7 +78,7 @@ define_builtin :type do |argv|
 end
 
 define_builtin :jobs do |argv|
-    return false if !check_arity(argv, [0], :jobs)
+    return false if !check_arity(argv, 0, 0, :jobs)
 
     # Reap any dead children before reporting
     reap_haunting_children
@@ -91,13 +91,25 @@ define_builtin :jobs do |argv|
 end
 
 define_builtin :fg do |argv|
-    return false if !check_arity(argv, [0, 1], :fg)
+    return false if !check_arity(argv, 0, 1, :fg)
 
-    job = argv.length == 0 ? $curr_job : $jobs[argv[0].to_i]
+    job = argv.length == 0 ? $curr_job : $jobs[argv.first.to_i]
 
     return error("fg: no such job") if !job
 
     job.continue
+    return true
+end
+
+define_builtin :bg do |argv|
+    return false if !check_arity(argv, 1, 1, :bg)
+
+    job = $jobs[argv.first.to_i]
+    return error("bg: no such job") if !job
+
+    job.background = true
+    job.continue
+
     return true
 end
 

@@ -44,6 +44,7 @@ class Integration < MiniTest::Unit::TestCase
 
     def test_execute_pipe
         input_to_shell 'cat -n | cat -n | cat -n'
+        sleep(0.5)
         pids = children(@shell_pid)
 
         assert pids.length == 3

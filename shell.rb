@@ -22,8 +22,8 @@ def repl
             input_lines.strip!
             valid, result = parse(input_lines)
             if !valid
-                error("%s: invalid syntax:\n%s\n%s" % [
-                      $shell, input_lines, ' ' * result + '^'])
+                error("%s: invalid syntax:\n%s\n%s" %
+                      [$shell, input_lines, ' ' * result + '^'])
             elsif result.length > 0
                 job = Job.new(result, input_lines)
                 job.run
