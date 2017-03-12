@@ -108,7 +108,7 @@ define_builtin :bg do |argv|
     return error("bg: no such job") if !job
 
     job.background = true
-    job.continue
+    job.continue(true)
 
     return true
 end

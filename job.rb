@@ -203,11 +203,11 @@ class Job
         reap_haunting_children(true)
     end
 
-    def continue
+    def continue(background = false)
         set_curr_and_prev_job(self, $curr_job)
-        to_foreground if !@background
+        to_foreground if !background
         Process.kill('SIGCONT', -@pgid)
-        wait if !@background
+        wait if !background
 
         reap_haunting_children
     end
