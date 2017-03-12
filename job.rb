@@ -6,6 +6,8 @@ $jobs = []
 $pid_job = {}
 # Shell terminal attributes
 $shell_attr = nil
+# IO connected to control terminal
+$shell_tty = $stderr
 # For `fg` and `jobs`, to determine current and previous job
 $curr_job = nil
 $prev_job = nil
@@ -41,14 +43,14 @@ class Job
                   :n_reaped, :n_stopped, :attr
 
     def restore_shell
-        @attr = Termios.tcgetattr($stdin)
-        Termios.tcsetattr($stdin, Termios::TCSANOW, $shell_attr)
-        Termios.tcsetpgrp($stdin, $$)
+        @attr = Termios.tcgetattr($shell_tty)
+        Termios.tcsetattr($shell_tty, Termios::TCSANOW, $shell_attr)
+        Termios.tcsetpgrp($shell_tty, $$)
     end
 
     def to_foreground
-        Termios.tcsetattr($stdin, Termios::TCSANOW, @attr ? @attr : $shell_attr)
-        Termios.tcsetpgrp($stdin, @pgid)
+        Termios.tcsetattr($shell_tty, Termios::TCSANOW, @attr ? @attr : $shell_attr)
+        Termios.tcsetpgrp($shell_tty, @pgid)
     end
 
     def mark_reaped_child(pid, status)
@@ -132,7 +134,7 @@ class Job
         stdout = $stdout
 
         # Store current terminal attributes
-        $shell_attr = Termios.tcgetattr($stdin)
+        $shell_attr = Termios.tcgetattr($shell_tty)
 
         success = @lst.each_with_index do |cmd, i|
             if i < @lst.length - 1
@@ -259,7 +261,7 @@ def job_init
     Signal.trap('SIGTTIN', 'SIG_IGN')
 
     setpgid_noexcept(0, 0)
-    Termios.tcsetpgrp($stdin, $$)
+    Termios.tcsetpgrp($shell_tty, $$)
 end
 
 def set_child_signals
