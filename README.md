@@ -19,7 +19,7 @@ $ ruby rubbish.rb
 # What we have now
 
 * shell builtins
-    - `cd`, `type`, `set`, `exit`, `echo`
+    - `cd`, `type`, `set`, `exit`, `echo`, `jobs`, `fg`, `bg`
 * execution of external commands
 * pipes
     - a single builtin spawns no process
@@ -30,6 +30,7 @@ $ ruby rubbish.rb
 * escape sequence
     - `\r`, `\n`, `\t`
 * colorized shell prompt
+* simple job control
 
 # Todo
 See the issues.
