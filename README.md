@@ -5,6 +5,12 @@ A ruby-ish rubbish shell.
 
 # How to run
 
+Gems needed:
+
+* [ruby-termios](https://github.com/arika/ruby-termios)
+
+After installing them,
+
 ```shell
 $ ruby rubbish.rb
 ```
@@ -26,6 +32,4 @@ $ ruby rubbish.rb
 * colorized shell prompt
 
 # Todo
-
-* Add test
-* Add more features
+See the issues.
