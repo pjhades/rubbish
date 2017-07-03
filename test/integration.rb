@@ -54,20 +54,20 @@ class Integration < MiniTest::Unit::TestCase
     end
 
     def test_stop_and_continue_job
-        input_to_shell 'cat'
+        input_to_shell 'tail -f /dev/null'
         pids = children(@shell_pid)
         assert pids.length == 1
 
-        cat_pid = pids.first[1].to_i
-        assert state(cat_pid) =~ /S\+/
+        tail_pid = pids.first[1].to_i
+        assert state(tail_pid) =~ /S\+/
 
-        Process.kill('SIGTSTP', cat_pid)
-        assert state(cat_pid) =~ /T/
+        Process.kill('SIGTSTP', tail_pid)
+        assert state(tail_pid) =~ /T/
 
         input_to_shell 'fg 0'
-        assert state(cat_pid) =~ /S\+/
+        assert state(tail_pid) =~ /S\+/
 
-        Process.kill('SIGKILL', cat_pid)
+        Process.kill('SIGKILL', tail_pid)
     end
 
     def test_terminate_running_job
