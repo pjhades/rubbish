@@ -1,8 +1,4 @@
-def read_line(prompt)
-    print prompt
-    s = $stdin.gets
-    s.strip unless s == nil
-end
+require 'readline'
 
 def repl
     input_lines = ''
@@ -16,10 +12,13 @@ def repl
     Signal.trap('SIGINT') { print "\n#{prompt.call}" }
     Signal.trap('SIGTSTP', 'SIG_IGN')
 
-    while line = read_line(prompt.call)
+    # I'm not sure if there's a clean way to handle
+    # multi-line input rather than this...
+    while line = Readline.readline(prompt.call, false)
         input_lines += line
         if input_lines[-1] != '\\'
             input_lines.strip!
+            Readline::HISTORY.push(input_lines)
             valid, result = parse(input_lines)
             if !valid
                 error("%s: invalid syntax:\n%s\n%s" %
